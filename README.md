@@ -1,7 +1,3 @@
-Got it. Here’s a README-friendly version using only plain text and simple markdown.
-
----
-
 ## SPX Multi-Horizon Target-Hit Forecaster — Lift vs Baseline Barrier Model
 
 This model is a barrier-hitting forecaster for SPX (^GSPC) that searches over horizon, minimum move, and regime filters to maximize edge vs a naive baseline.
