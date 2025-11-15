@@ -1,52 +1,76 @@
-**SPX Target-Hit Forecaster — Edge vs Baseline Barrier Model**
+**SPX Multi-Horizon Target-Hit Forecaster — Lift vs Baseline Barrier Model**
 
-This model is a **barrier-hitting forecaster** for SPX (^GSPC). It predicts when the index is likely to **rally at least a fixed percentage (e.g. +3%) within a future window (e.g. 10 trading days)** and only fires in favorable regimes.
+This model is a **barrier-hitting forecaster for SPX (^GSPC)** that searches over **horizon, minimum move and regime filters** to **maximize edge vs a naive baseline**.
 
-The engine:
+Core ideas:
 
-* Uses daily **high/low/close** prices from yfinance.
-* Builds **labels** based on whether the **future max high** hits a target level (e.g. +3% above today’s close within N days).
-* Uses a **regime filter** combining:
+* For each day it asks:
+
+  > *“Will SPX’s high reach at least X% above today’s close within the next N trading days?”*
+* It builds **labels** from the *future max high* over `[t+1, …, t+N]`.
+* It only fires in **favorable regimes** based on:
 
   * **Convex momentum** (quadratic trend + curvature in log price),
   * **ATR-based target sizing**,
   * **30-day realized volatility**,
-  * **RSI band** (e.g. 40–70),
+  * **RSI band** (40–70),
   * **Position in 60-day range**.
-* Tunes **(lambda_convex, ATR_MULT, VOL_MIN)** via **walk-forward CV** (no leakage), optimizing **precision** and then **coverage**.
+* It uses **walk-forward CV** (no leakage) to pick the best combo of:
+
+  * `horizon_days`, `min_move`, `lambda_convex`, `ATR_MULT`, `VOL_MIN`
+    by **maximizing lift vs baseline** with a minimum coverage guard.
 
 ---
 
-**Baseline vs Model (edge definition)**
+### Baseline vs Model (definition of “edge”)
 
 * **Baseline**
-  The baseline is the **unconditional probability** that SPX hits the target (e.g. **+3% within 10 trading days**) starting from any day, with **no filters**:
+  Unconditional probability that the move happens, no filters:
 
-  > baseline = P( hit +3% within 10d | all days )
+  > **Baseline:** ( P(\text{hit } +\text{min_move} \text{ within } N\text{d} \mid \text{all days}) )
 
 * **Model**
-  The model only makes a prediction when its regime filter turns on (`predict_flag = True`). The **model hit rate** is:
+  Probability the move happens **on days where the model actually fires** (`predict_flag = True`):
 
-  > model = P( hit target (≥ +3%) | model fires )
+  > **Model:** ( P(\text{hit target} \ (\ge \text{min_move}) \mid \text{model fires}) )
 
-* **Lift / Edge vs baseline**
-  The **edge** is the **absolute lift in hit rate** over the baseline:
+* **Lift / Edge vs Baseline**
+  The **edge** is the **absolute improvement in hit rate** over the baseline:
 
-  > **lift_vs_baseline = model − baseline**
+  > **Lift vs baseline:** ( \text{model} - \text{baseline} )
 
-  This tells you how much better the **conditional regime-selected days** are than **random days**, for the exact same target (+3% / 10 days).
+This is the cleanest way to quantify whether the regime filter is **actually concentrating probability mass** versus just cherry-picking a few lucky points.
 
 ---
 
-**Example run — +3% target within 10 trading days**
+### Example configuration A — **+3% target within 10 trading days**
 
-* **Baseline:** P(hit +3.0% within 10d | all days) = **25.33%**
-* **Model:** P(hit target (≥ 3.0%) | model fires) = **46.25%**
-* **Coverage:** fraction of days with prediction = **6.34%**
-* **Lift vs baseline (absolute):** **+20.92 percentage points**
+* **Target:** SPX high reaches **≥ +3.0%** within **10 trading days**
+* **Baseline hit rate:**
+  **25.33%** — on a random day, SPX hits +3% within 10 days about 1 in 4 times.
+* **Model hit rate (when it fires):**
+  **46.25%**
+* **Coverage:**
+  **6.34%** of days have a live signal.
+* **Lift vs baseline (absolute):**
+  **+20.92 percentage points**
 
-Interpretation:
+**Interpretation:**
+The model more or less **doubles the hit probability** (25% → 46%) on a **small subset (~6%) of high-conviction days**, instead of making a prediction every day.
 
-* If you blindly assume **“SPX will hit +3% within 10 days”** starting from any random day, you’d be right about **25%** of the time.
-* If you only make that call on days when this model fires, you’re right about **46%** of the time.
-* That’s an **edge of ~21 percentage points in hit probability**, with the model firing on **~6% of days**, i.e. a **selective high-conviction signal** rather than a daily forecast.
+---
+
+### Example configuration B — **+2% target within 5 trading days**
+
+* **Target:** SPX high reaches **≥ +2.0%** within **5 trading days**
+* **Baseline hit rate:**
+  **25.58%** — randomly, SPX hits +2% within 5 days about 1 in 4 times.
+* **Model hit rate (when it fires):**
+  **49.01%**
+* **Coverage:**
+  **6.34%** of days have a live signal.
+* **Lift vs baseline (absolute):**
+  **+23.44 percentage points**
+
+**Interpretation:**
+For shorter horizon / smaller move (+2% in 5 days), the model still fires on about **6% of days**, but these days have roughly **double the baseline hit rate** (26% → 49%), giving an **edge of ~23 percentage points** in target-hit probability.
